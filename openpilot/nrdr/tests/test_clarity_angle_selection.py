@@ -29,11 +29,12 @@ def test_angle_mode_is_excluded_from_the_ptm_controller():
 
 
 @pytest.mark.parametrize("saved", [None, 0, 1, 2, 3])
+@pytest.mark.parametrize("mode", [None, False, True])
 @pytest.mark.parametrize("firmware,expected", [
   ([b"39990+TRW+A020\0\0"], True), ([b"39990-TRW-A020"], False), ([b"39990-TRW,A020"], False),
   ([b"39990+TRW+A021"], False), ([], False), ([b"39990+TRW+A020", b"39990-TRW-A020"], False),
 ])
-def test_detected_config_selects_exact_rack_on_first_start(tmp_path, monkeypatch, saved, firmware, expected):
+def test_detected_config_selects_exact_rack_on_first_start(tmp_path, monkeypatch, saved, mode, firmware, expected):
   from opendbc.car.structs import car
   from opendbc.sunnypilot.car.honda.clarity_eps import apply_angle_mode, EpsCalStatus
   from openpilot.cereal import custom
@@ -41,6 +42,8 @@ def test_detected_config_selects_exact_rack_on_first_start(tmp_path, monkeypatch
   from openpilot.sunnypilot.selfdrive.car import opendbc_config as boundary
 
   params = FakeParams({} if saved is None else {"NrdrLateralController": saved})
+  if mode is not None:
+    params.put_bool("NrdrHondaAngleMode", mode)
   builder = boundary.build_sunnypilot_car_config
   monkeypatch.setattr(boundary, "build_sunnypilot_car_config", lambda p: builder(p, start_worker=False, metadata_path=tmp_path / "meta"))
   # Keep the capability flags identical: punctuation alone or a stale flag must not cause a match.
@@ -48,11 +51,16 @@ def test_detected_config_selects_exact_rack_on_first_start(tmp_path, monkeypatch
   cp = car.CarParams.new_message(brand="honda", carFingerprint="HONDA_CLARITY", carFw=[{"ecu": "eps", "fwVersion": fw} for fw in firmware])
   config = boundary.configure_detected_car_defaults(cp, sp, boundary.build_sunnypilot_car_config(params), params)
   try:
-    assert config.honda.clarity_angle_mode is expected
+    use_angle = expected and mode is not False
+    assert config.honda.clarity_angle_mode is use_angle
     apply_angle_mode(cp, sp, config.honda.clarity_angle_mode)
-    assert (cp.steerControlType == "angle") is expected
-    assert not EpsCalStatus(cp, sp).angle_ready  # Selection alone never authorizes output.
+    assert (cp.steerControlType == "angle") is use_angle
+    assert angle_controller_available(cp, sp) is expected
+    status = EpsCalStatus(cp, sp)
+    assert not status.angle_ready and not status.stock_ready
+    assert status.stock_angle_ptm is (expected and mode is False)
     assert params.get("NrdrLateralController") == saved
+    assert params.get("NrdrHondaAngleMode") is mode
   finally:
     config.honda.provider.close()
 
@@ -95,13 +103,13 @@ def test_only_angle_knobs_unlock_and_saved_torque_tune_survives_switches():
   assert (p["LatPScaleStandard"], p["HondaEpsAngleRateLimit"]) == (113, 60)
 
 
-@pytest.mark.parametrize("detected,expected", [(True, b"3"), (False, b"2")])
-def test_sunnylink_reads_effective_controller_without_writing_preferences(detected, expected):
+@pytest.mark.parametrize("detected,mode,expected", [(True, None, b"3"), (True, False, b"0"), (True, True, b"3"), (False, False, b"2")])
+def test_sunnylink_reads_effective_controller_without_writing_preferences(detected, mode, expected):
   import base64
   import json
   from openpilot.nrdr.tests.test_sunnylink_model_catalog import load_function, MemoryParams, ParamType
   key = "NrdrLateralController"
-  params = MemoryParams({key: 2})
+  params = MemoryParams({key: 2, "NrdrHondaAngleMode": mode})
   read = load_function("openpilot/sunnypilot/sunnylink/athena/sunnylinkd.py", "getParams", {
     "Params": lambda: params, "ParamKeyType": ParamType, "json": json, "base64": base64,
     "_vehicle_tuning_capabilities": lambda: {"nrdr_angle_controller_available": detected},

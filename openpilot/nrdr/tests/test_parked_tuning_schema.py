@@ -184,6 +184,16 @@ def test_compiled_firmware_compatibility_survives_parked_preset_exception(items,
   assert not allowed(items["NrdrDeviceYawCorrection"], values, "visibility")
 
 
+def test_compiled_honda_angle_mode_is_offroad_and_firmware_gated(items):
+  toggle = items["NrdrHondaAngleMode"]
+  assert toggle["widget"] == "toggle"
+  for offroad in (False, True):
+    for capable in (False, True):
+      values = {"IsOffroad": offroad, "nrdr_angle_controller_available": capable}
+      assert allowed(toggle, values, "visibility") is capable
+      assert allowed(toggle, values) is (offroad and capable)
+
+
 def test_compiled_cruise_has_no_blanket_preset_lock_and_preserves_icbm_action_guard(schema, items):
   page = next(panel for panel in schema["panels"] if panel["id"] == "cruise")
   assert not page.get("enablement")

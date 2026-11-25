@@ -91,6 +91,7 @@
     {"HondaOverrideTorqueScale", {PERSISTENT | BACKUP, INT, "0"}},
     {"HondaDriverAssistDuringOverride", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"HondaClarityAngleMode", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"NrdrHondaAngleMode", {PERSISTENT | BACKUP, BOOL, "1"}},
     {"HondaClarityAngleCap3", {PERSISTENT | BACKUP, BOOL, "0"}},
     {"HondaEpsAngleRateLimit", {PERSISTENT | BACKUP, INT, "0"}},
     {"HondaLiveLearningGas", {PERSISTENT | BACKUP, BOOL}},

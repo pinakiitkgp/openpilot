@@ -198,6 +198,7 @@ PARAM_SPECS: tuple[ParamSpec, ...] = (
   _added("HondaDriverAssistDuringOverride", ParamType.BOOL, PB, "1", owner=ParamOwner.HONDA),
   # Clarity mode-switch / angle-loop EPS (opendbc sunnypilot/car/honda/clarity_eps.py)
   _added("HondaClarityAngleMode", ParamType.BOOL, PB, "0", owner=ParamOwner.HONDA),  # legacy preference, consumed at upgrade only
+  _added("NrdrHondaAngleMode", ParamType.BOOL, PB, "1", owner=ParamOwner.HONDA),
   _added("HondaClarityAngleCap3", ParamType.BOOL, PB, "0", owner=ParamOwner.HONDA),  # live: 3.0 m/s^2 profile on build 0x05
   _added("HondaEpsAngleRateLimit", ParamType.INT, PB, "0", owner=ParamOwner.HONDA),  # live: angle target rate cap, deg/s, 0 = off
   _added("HondaLiveLearningGas", ParamType.BOOL, PB, owner=ParamOwner.HONDA),

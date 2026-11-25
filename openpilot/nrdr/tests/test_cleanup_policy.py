@@ -6,6 +6,7 @@ from types import SimpleNamespace as NS
 import numpy as np
 import pytest
 
+from openpilot.nrdr.features.lateral.controller_selection import angle_mode_requested, effective_lateral_controller
 from openpilot.nrdr.params.tuning_policy import LONG_SCALE_KEYS, reset_learning_scales, tuning_write_allowed
 from openpilot.nrdr.params.profiles import disable_suggested_settings
 from openpilot.nrdr.features.lateral.lane_change_tuning import bounded_setting, optimized_lane_change_active
@@ -139,6 +140,7 @@ def test_real_yaw_is_clarity_only_and_stationary_zero_is_bounded():
 
 
 def _definitions(relative, env):
+  env.update(angle_mode_requested=angle_mode_requested, effective_lateral_controller=effective_lateral_controller)
   path = ROOT / relative
   tree = ast.parse(path.read_text(encoding="utf-8"))
   tree.body = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.ClassDef, ast.Assign, ast.AnnAssign))]
@@ -182,23 +184,31 @@ def test_native_picker_only_offers_both_ptm_choices_for_supported_parked_cars(av
     assert shown[0].options == (["PIF Control", "PTM Controller", "PTM Testing"] if available else ["PIF Control"])
 
 
-def test_angle_firmware_displays_angle_and_never_accepts_a_torque_choice():
+def test_angle_switch_controls_label_and_keeps_the_saved_ptm_choice():
   from collections.abc import Callable
+  from unittest.mock import Mock
   shown = []
-  state = NS(params=MemoryParams(NrdrLateralController=0), CP=object(), CP_SP=object(), is_offroad=lambda: True)
+  state = NS(params=MemoryParams(NrdrLateralController=2, IsOffroad=True), CP=object(), CP_SP=object(), is_offroad=lambda: True)
   env = {"Widget": object, "Callable": Callable, "tr": lambda text: text, "ui_state": state,
          "firmware_controller_profile": lambda *_, **kw: None, "angle_controller_available": lambda *_: True,
          "MultiOptionDialog": lambda title, options, selected, **kw: NS(options=options, selection=selected, **kw),
          "DialogResult": NS(CONFIRM=1), "gui_app": NS(push_widget=shown.append)}
   picker = _definitions("openpilot/nrdr/ui/settings/pidf_ground.py", env)["PidfGroundLayout"]
   layout = picker.__new__(picker)
+  layout._angle_mode = Mock()
   layout._show_controller_selector()
   assert not shown
   assert layout._controller_label() == "Angle Controller"
   assert not layout._commit_controller_selection(0)
   assert not layout._commit_controller_selection(2)
   assert layout._commit_controller_selection(3)
-  assert state.params["NrdrLateralController"] == 0
+  layout._set_angle_mode(False)
+  assert layout._controller_label() == "PIF Control"
+  assert layout._commit_controller_selection(0)
+  assert state.params["NrdrLateralController"] == 2
+  state.params["IsOffroad"] = False
+  layout._set_angle_mode(True)
+  assert state.params["NrdrHondaAngleMode"] is False
 
 
 @pytest.mark.parametrize("controller", [0, 1, "1", b"1", 2, "2", b"2", 3, "3", b"3"])
@@ -210,13 +220,15 @@ def test_native_ptm_choices_hide_yaw_correction_and_keep_fixed_tuning_locked(con
     def _update_state(self):
       pass
   env = {"Widget": Widget, "Callable": Callable, "tr": lambda text: text,
-         "ui_state": NS(params=MemoryParams(NrdrLateralController=controller), CP=object(), CP_SP=object(), is_offroad=lambda: True),
+         "ui_state": NS(params=MemoryParams(NrdrLateralController=controller), CP=NS(carFingerprint="HONDA_CLARITY"),
+                        CP_SP=object(), is_offroad=lambda: True),
          "firmware_controller_profile": lambda *_: None, "supports_interpolated_torque_pif": lambda *_: True,
          "angle_controller_available": lambda *_: detected,
          "tuning_write_allowed": tuning_write_allowed, "ANGLE_TUNING_KEYS": {"HondaClarityAngleCap3", "HondaEpsAngleRateLimit"}}
   picker = _definitions("openpilot/nrdr/ui/settings/pidf_ground.py", env)["PidfGroundLayout"]
   layout = picker.__new__(picker)
   layout._controller = Mock()
+  layout._angle_mode = Mock()
   angle = detected or controller in (3, "3", b"3")
   layout._tuning_items = {key: Mock() for key in ("NrdrDeviceYawCorrection", "LatPScaleStandard", *env["ANGLE_TUNING_KEYS"])}
   layout._update_state()

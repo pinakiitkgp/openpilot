@@ -38,7 +38,7 @@ class TestHandcraftedRequestRouting(unittest.TestCase):
   def setUp(self):
     self.params = SimpleNamespace(
       get_bool=Mock(return_value=True),
-      get=Mock(return_value="0"),
+      get=Mock(side_effect=lambda key: None if key == "NrdrHondaAngleMode" else "0"),
       put=Mock(),
       put_bool=Mock(),
     )
@@ -213,7 +213,7 @@ class TestHandcraftedRequestRouting(unittest.TestCase):
     for key, raw in (("HondaClarityAngleCap3", b"1"), ("HondaEpsAngleRateLimit", b"60")):
       for selection, hardware in ((0, True), (2, True), (3, False), (3, True)):
         cap["nrdr_angle_controller_available"] = hardware
-        self.params.get.side_effect = lambda k, selection=selection, **_: selection if k == "NrdrLateralController" else 0
+        self.params.get.side_effect = lambda k, selection=selection, **_: selection if k == "NrdrLateralController" else None
         self.generic_write.reset_mock()
         if hardware:
           self.save_params({key: self._encode(raw)})
@@ -225,6 +225,29 @@ class TestHandcraftedRequestRouting(unittest.TestCase):
     for key, raw in (("HondaClarityAngleMode", b"1"), ("HondaEpsAngleRateLimit", b"301"), ("HondaClarityAngleCap3", b"maybe")):
       with self.assertRaises(ValueError):
         self.save_params({key: self._encode(raw)})
+
+  def test_sunnylink_honda_angle_mode_is_parked_and_firmware_gated(self):
+    key = "NrdrHondaAngleMode"
+    stored = {"IsOffroad": True, "NrdrLateralController": 2}
+    self.params.get.side_effect = stored.get
+    self.params.get_bool.side_effect = lambda k: bool(stored.get(k))
+    self.params.put_bool.side_effect = lambda k, value, **_: stored.update({k: value})
+    caps = self.namespace["_vehicle_tuning_capabilities"].return_value
+    caps.update(nrdr_honda_tuning_available=True, nrdr_angle_controller_available=True)
+    self.save_params({key: self._encode(b"0")})
+    assert stored[key] is False and stored["NrdrLateralController"] == 2
+    self.save_params({"NrdrLateralController": self._encode(b"0")})
+    with self.assertRaises(ValueError):
+      self.save_params({"HondaEpsAngleRateLimit": self._encode(b"60")})
+    self.save_params({key: self._encode(b"1", True)}, True)
+    assert stored[key] is True and stored["NrdrLateralController"] == 2
+    self.params.put_bool.reset_mock()
+    for offroad, capable, raw in ((False, True, b"0"), (True, False, b"0"), (True, True, b"garbage")):
+      stored["IsOffroad"] = offroad
+      caps["nrdr_angle_controller_available"] = capable
+      with self.assertRaises(ValueError):
+        self.save_params({key: self._encode(raw)})
+    self.params.put_bool.assert_not_called()
 
   def test_angle_lookahead_remote_write(self):
     key = "NrdrClarityAngleLookaheadMs"

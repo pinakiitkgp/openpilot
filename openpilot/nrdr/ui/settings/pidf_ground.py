@@ -5,7 +5,9 @@ import pyray as rl
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.nrdr.params.tuning_policy import ANGLE_TUNING_KEYS, tuning_write_allowed
 from openpilot.nrdr.ui.settings.lateral_experiments import LATERAL_EXPERIMENTS
-from openpilot.nrdr.features.lateral.controller_selection import angle_controller_available, firmware_controller_profile
+from openpilot.nrdr.features.lateral.controller_selection import (
+  angle_controller_available, angle_mode_requested, effective_lateral_controller, firmware_controller_profile,
+)
 from openpilot.nrdr.features.lateral.capabilities import supports_interpolated_torque_pif
 from openpilot.nrdr.ui.native_param_controls import get_native_option_spec
 from openpilot.system.ui.lib.application import gui_app
@@ -28,13 +30,16 @@ class PidfGroundLayout(Widget):
     self._controller = button_item_sp(
       title=lambda: tr("Controller Type"), description="", button_text=self._controller_label,
       callback=self._show_controller_selector, enabled=lambda: ui_state.is_offroad())
+    self._angle_mode = toggle_item_sp(
+      title=tr("Honda Angle Mode"), initial_state=angle_mode_requested(ui_state.params), callback=self._set_angle_mode,
+      description=tr("On uses AnglePTM steering. Off uses the EPS's stock torque mode. Change while parked. Applies next drive."))
     self._tuning_items = {}
 
     def remember(key, item):
       self._tuning_items[key] = item
       return item
 
-    items = [self._controller,
+    items = [self._controller, self._angle_mode,
       remember("HondaClarityAngleCap3", toggle_item_sp(
         title=tr("Clarity Angle Lateral Cap 3.0 m/s²"), param="HondaClarityAngleCap3",
         description=tr("Clarity EPS builds 0x05, 0x09 and 0x0A can select a 3.0 m/s² cap while lateral control is off."))),
@@ -87,12 +92,17 @@ class PidfGroundLayout(Widget):
 
   @staticmethod
   def _controller_label():
-    saved = ui_state.params.get("NrdrLateralController")
-    if angle_controller_available(ui_state.CP, ui_state.CP_SP) or saved in (3, "3", b"3"):
+    controller = effective_lateral_controller(ui_state.params, angle_controller_available(ui_state.CP, ui_state.CP_SP))
+    if controller == 3:
       return tr("Angle Controller")
-    if saved in (2, "2", b"2"):
+    if controller == 2:
       return tr("PTM Testing")
-    return tr("PTM Controller") if saved in (1, "1", b"1") else tr("PIF Control")
+    return tr("PTM Controller") if controller == 1 else tr("PIF Control")
+
+  def _set_angle_mode(self, enabled: bool):
+    if angle_controller_available(ui_state.CP, ui_state.CP_SP) and ui_state.is_offroad() and ui_state.params.get_bool("IsOffroad"):
+      ui_state.params.put_bool("NrdrHondaAngleMode", enabled, block=True)
+    self._angle_mode.action_item.set_state(angle_mode_requested(ui_state.params))
 
   @staticmethod
   def _commit_controller_selection(value):
@@ -100,7 +110,7 @@ class PidfGroundLayout(Widget):
     if not ui_state.is_offroad() or value not in (0, 1, 2, 3):
       return False
     if angle_controller_available(ui_state.CP, ui_state.CP_SP):
-      return value == 3  # Firmware owns this choice. Leave the saved preference alone.
+      return value == effective_lateral_controller(ui_state.params, True)
     if value in (1, 2) and firmware_controller_profile(ui_state.CP, ui_state.CP_SP, for_picker=True) is None:
       return False
     if value == 3:
@@ -127,11 +137,15 @@ class PidfGroundLayout(Widget):
 
   def _update_state(self):
     super()._update_state()
-    angle_required = angle_controller_available(ui_state.CP, ui_state.CP_SP)
-    self._controller.action_item.set_enabled(ui_state.is_offroad() and not angle_required)
+    angle_available = angle_controller_available(ui_state.CP, ui_state.CP_SP)
+    controller = effective_lateral_controller(ui_state.params, angle_available)
+    self._controller.action_item.set_enabled(ui_state.is_offroad() and not angle_available)
+    self._angle_mode.set_visible(angle_available)
+    self._angle_mode.action_item.set_enabled(angle_available and ui_state.is_offroad())
+    self._angle_mode.action_item.set_state(angle_mode_requested(ui_state.params))
     profile = firmware_controller_profile(ui_state.CP, ui_state.CP_SP)
     description = tr("PTM Testing is experimental and starts with the same PTM Timing Off behavior; no new tuning is deployed. " +
-                     "Change while parked. Applies next drive. Supported Honda AnglePTM firmware selects Angle Controller automatically. " +
+                     "Change while parked. Applies next drive. On supported firmware, Honda Angle Mode selects the controller. " +
                      "Angle assistance has unresolved steering dropouts; not for road use.")
     if profile is not None and profile.required_rwd:
       description += " " + tr("Requires the corrected PTM firmware (RWD {}). Older builds report the same EPS version and are not "
@@ -142,12 +156,12 @@ class PidfGroundLayout(Widget):
     for key, item in self._tuning_items.items():
       available = key != "NrdrDeviceYawCorrection" or supports_interpolated_torque_pif(ui_state.CP, ui_state.CP_SP)
       if key in ANGLE_TUNING_KEYS:
-        available = angle_required
+        available = angle_available and controller == 3
         if key == "HondaClarityAngleCap3":
           available = available and ui_state.CP.carFingerprint == "HONDA_CLARITY"
       if key == "NrdrDeviceYawCorrection":
-        item.set_visible(angle_required or str(ui_state.params.get("NrdrLateralController")) not in ("1", "b'1'", "2", "b'2'"))
-      item.action_item.set_enabled(available and tuning_write_allowed(ui_state.params, key, angle_required=angle_required))
+        item.set_visible(controller not in (1, 2))
+      item.action_item.set_enabled(available and tuning_write_allowed(ui_state.params, key, angle_required=angle_available))
 
   def _render(self, rect):
     self._back_button.set_position(self._rect.x, self._rect.y + 20)

@@ -11,6 +11,7 @@ ONROAD_WRITE_BLOCKLIST = frozenset((
   "NrdrStandstillGapExtra",
   "NrdrSuggestedSettings",
   "NrdrLateralController",
+  "NrdrHondaAngleMode",
   "NrdrLateralSpeedBound", "NrdrTurnDesireRefresh", "NrdrClarityAngleLookaheadMs",
   "NrdrDriverMonitoringReminderPercent",
   "NrdrPcmSpeedDeadzone",
@@ -22,7 +23,7 @@ ONROAD_WRITE_BLOCKLIST = frozenset((
 HONDA_TUNING_WRITE_KEYS = frozenset((
   # Lateral tuning.
   "NrdrLateralSpeedBound", "NrdrTurnDesireRefresh",
-  "NrdrLateralController", "NrdrOptimizedLaneChanges", "NrdrDeviceYawCorrection",
+  "NrdrLateralController", "NrdrHondaAngleMode", "NrdrOptimizedLaneChanges", "NrdrDeviceYawCorrection",
   "NrdrLatRateDampingLowSpeed", "NrdrLatRateDampingStandard", "NrdrLatRateDampingHighway",
   "LatPScaleLowSpeed",
   "LatIScaleLowSpeed",

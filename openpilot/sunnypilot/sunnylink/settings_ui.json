@@ -624,7 +624,7 @@
                   "widget": "multiple_button",
                   "title": "Controller Type",
                   "description": "Choose the steering controller: PIF uses your feedback tune, while PTM Controller uses a vehicle-specific calibration. PTM Testing is experimental and starts with the same PTM Timing Off behavior; no new tuning is deployed.",
-                  "details": "Change while parked. Applies next drive. Both PTM choices require the exact modified steering firmware build shown in Controller Type on the device. Older builds with the same version name are incompatible. Clarity EPS 39990+TRW+A020 selects Angle Controller automatically. Angle assistance has unresolved steering dropouts; not for road use.",
+                  "details": "Change while parked. Applies next drive. Both PTM choices require the exact modified steering firmware build shown in Controller Type on the device. Older builds with the same version name are incompatible. On supported firmware, Honda Angle Mode selects the controller. Angle assistance has unresolved steering dropouts; not for road use.",
                   "options": [
                     {
                       "value": 0,
@@ -699,6 +699,29 @@
                         "key": "NrdrHandcraftedLateralTune",
                         "equals": true
                       }
+                    }
+                  ]
+                },
+                {
+                  "key": "NrdrHondaAngleMode",
+                  "widget": "toggle",
+                  "title": "Honda Angle Mode",
+                  "description": "On uses AnglePTM steering. Off uses the EPS's stock torque mode. Change while parked. Applies next drive.",
+                  "visibility": [
+                    {
+                      "type": "capability",
+                      "field": "nrdr_angle_controller_available",
+                      "equals": true
+                    }
+                  ],
+                  "enablement": [
+                    {
+                      "type": "offroad_only"
+                    },
+                    {
+                      "type": "capability",
+                      "field": "nrdr_angle_controller_available",
+                      "equals": true
                     }
                   ]
                 },

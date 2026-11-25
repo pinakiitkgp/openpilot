@@ -14,7 +14,7 @@ import numpy as np
 from opendbc.sunnypilot.car.honda.values_ext import HondaFlagsSP, PTM_EPS_REVISIONS
 from openpilot.nrdr.features.lateral import vfn_eps_core as core
 from openpilot.nrdr.features.lateral.controller_selection import (
-  ODYSSEY_PROFILE, RIDGELINE_PROFILE, firmware_controller_profile, firmware_controller_selected,
+  ODYSSEY_PROFILE, RIDGELINE_PROFILE, effective_lateral_controller, firmware_controller_profile, firmware_controller_selected,
 )
 from openpilot.nrdr.features.lateral.honda_rack_map import get_rack_map_table
 from openpilot.nrdr.features.lateral.honda_vgr import get_honda_vgr_profile
@@ -159,7 +159,7 @@ class TestPtmUpdate(unittest.TestCase):
     label.decorator_list = []
     for saved in (1, "1", b"1", 2, "2", b"2", 0, "0", b"0", None, 3, "3", b"3", "garbage"):
       env = {"tr": lambda text: text, "ui_state": NS(params={"NrdrLateralController": saved}, CP=None, CP_SP=None),
-             "angle_controller_available": lambda *_: False}
+             "angle_controller_available": lambda *_: False, "effective_lateral_controller": effective_lateral_controller}
       exec(compile(ast.Module(body=[label], type_ignores=[]), "native_controller_label", "exec"), env)
       expected = "PTM Testing" if saved in (2, "2", b"2") else "PTM Controller" if saved in (1, "1", b"1") else "PIF Control"
       self.assertEqual(env["_controller_label"](), "Angle Controller" if saved in (3, "3", b"3") else expected)

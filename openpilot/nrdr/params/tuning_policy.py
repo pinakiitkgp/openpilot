@@ -117,20 +117,20 @@ def tuning_write_allowed(params, key: str | None, *, firmware_prediction_schedul
     return True
   if key in RETIRED_TUNING_KEYS or key.startswith("NrdrNnlc"):
     return False
+  from openpilot.nrdr.features.lateral.controller_selection import angle_controller_available, effective_lateral_controller
+  if CP is not None and CP_SP is not None:
+    angle_required = angle_controller_available(CP, CP_SP)
+  controller = effective_lateral_controller(params, angle_required)
   if key in ANGLE_TUNING_KEYS or key in ANGLE_LOCKED_KEYS:
-    if CP is not None and CP_SP is not None:
-      from openpilot.nrdr.features.lateral.controller_selection import angle_controller_available
-      angle_required = angle_controller_available(CP, CP_SP)
-    angle = angle_required or params.get("NrdrLateralController") in (3, "3", b"3")
-    if (key in ANGLE_TUNING_KEYS) != angle:
+    if (key in ANGLE_TUNING_KEYS) != (controller == 3):
       return False
   if key in LONG_SCALE_KEYS or key in ("NrdrHondaFullBrakeAuthority", "StaticFeedforwardLong", "NrdrHondaWindBrake"):
     from openpilot.nrdr.params.longitudinal_controller import LongitudinalController, saved_controller
-    controller = saved_controller(params, bosch_radar_available=True)
+    long_controller = saved_controller(params, bosch_radar_available=True)
     if key in LONG_SCALE_KEYS or key == "NrdrHondaFullBrakeAuthority":
-      if controller != LongitudinalController.STANDARD:
+      if long_controller != LongitudinalController.STANDARD:
         return False
-    if key in ("StaticFeedforwardLong", "NrdrHondaWindBrake") and controller == LongitudinalController.PERSONAL_PEDAL:
+    if key in ("StaticFeedforwardLong", "NrdrHondaWindBrake") and long_controller == LongitudinalController.PERSONAL_PEDAL:
       return False
   # A controller's ownership of its running tune does not prevent preparing
   # another tune while parked. Persistent CP describes the previous drive.
@@ -147,7 +147,7 @@ def tuning_write_allowed(params, key: str | None, *, firmware_prediction_schedul
   if (not parked and _enabled(params, "NrdrSuggestedSettings")) or _enabled(params, "NrdrHandcraftedLateralTune"):
     if key in SUGGESTED_LOCK_KEYS or key.startswith(("NrdrSteerRatio", "LaneCenter", "NrdrLatRateDamping")):
       return False
-  if str(params.get("NrdrLateralController")) in ("1", "b'1'", "2", "b'2'"):
+  if controller in (1, 2):
     if firmware_prediction_schedule and key in ("LagdToggle", "LagdToggleDelay"):
       return False
     if key in YAW_FIXED_KEYS or key.startswith("NrdrLatRateDamping"):

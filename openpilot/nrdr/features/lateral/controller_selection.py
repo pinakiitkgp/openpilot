@@ -98,6 +98,20 @@ def angle_controller_available(CP, CP_SP) -> bool:
   return angle_ptm_available(CP, CP_SP)
 
 
+def angle_mode_requested(params) -> bool:
+  saved = params.get("NrdrHondaAngleMode")
+  return saved is None or saved in (True, "1", b"1")
+
+
+def effective_lateral_controller(params, angle_available: bool) -> int:
+  if angle_available:
+    return 3 if angle_mode_requested(params) else 0
+  try:
+    return int(params.get("NrdrLateralController"))
+  except (TypeError, ValueError):
+    return 0
+
+
 def firmware_controller_profile(CP, CP_SP, *, for_picker: bool = False) -> FirmwareControllerProfile | None:
   profile = _firmware_family(CP)
   flags = getattr(CP_SP, "flags", 0)

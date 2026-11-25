@@ -14,7 +14,7 @@ from openpilot.common.hardware.hw import Paths
 from openpilot.common.swaglog import cloudlog
 from openpilot.sunnypilot.models.helpers import is_bundle_version_compatible
 from openpilot.cereal import custom
-from openpilot.nrdr.features.services.model_artifacts import PLAIN_ARTIFACT_REFS, verified_rebuild_bundles
+from openpilot.nrdr.features.services.model_artifacts import PLAIN_ARTIFACT_REFS, download_rebuild_bundles, verified_rebuild_bundles
 
 
 class ModelParser:
@@ -94,8 +94,11 @@ class ModelParser:
 def local_rebuilds_for_source(source):
   if source != "qcom" or not COMMA_HARDWARE:
     return []
-  camera = (1344, 760) if HARDWARE.get_device_type() == "mici" else (1928, 1208)
-  return verified_rebuild_bundles(Paths.model_root(), camera)
+  device = HARDWARE.get_device_type()
+  camera = (1344, 760) if device == "mici" else (1928, 1208)
+  downloads = download_rebuild_bundles(device)
+  refs = {bundle["ref"] for bundle in downloads}
+  return downloads + [bundle for bundle in verified_rebuild_bundles(Paths.model_root(), camera) if bundle["ref"] not in refs]
 
 
 def include_local_rebuilds(bundles, source):

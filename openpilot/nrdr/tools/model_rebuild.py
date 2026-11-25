@@ -81,12 +81,17 @@ def build(selection: dict, source_artifact: Path, source_dir: Path, camera: tupl
     else:
       command = [sys.executable, "-m", "openpilot.sunnypilot.modeld_v2.compile_modeld", "--model-type", recipe["model_type"],
                  "--model-size", "x".join(map(str, recipe["model_size"])), "--camera-resolutions", "x".join(map(str, camera)),
-                 "--benchmark-runs", "1", "--output", str(output),
-                 "--vision-onnx", str((source_dir / "driving_vision.onnx").resolve()),
-                 "--policy-onnx", str((source_dir / "driving_policy.onnx").resolve())]
+                 "--benchmark-runs", "1", "--output", str(output)]
+      if recipe["model_type"] == "supercombo":
+        command += ["--supercombo-onnx", str((source_dir / recipe["model_file"]).resolve())]
+      else:
+        command += ["--vision-onnx", str((source_dir / "driving_vision.onnx").resolve()),
+                    "--policy-onnx", str((source_dir / "driving_policy.onnx").resolve())]
       if recipe["frame_skip"] is not None:
         command += ["--frame-skip", str(recipe["frame_skip"])]
-    subprocess.run(command, check=True, env=dict(os.environ, DEV=device, **recipe.get("compiler_env", {})))
+    root = Path(__file__).resolve().parents[3]
+    pythonpath = os.pathsep.join(filter(None, (str(root), str(root / "tinygrad_repo"), os.environ.get("PYTHONPATH"))))
+    subprocess.run(command, check=True, env=dict(os.environ, DEV=device, PYTHONPATH=pythonpath, **recipe.get("compiler_env", {})), cwd=staging)
     combined = Path(staging) / "driving.pkl"
     with open_file_chunked(str(output)) as source, combined.open("wb") as target:
       shutil.copyfileobj(source, target)
@@ -165,7 +170,7 @@ def verify(selection: dict, source_artifact: Path, camera: tuple[int, int]) -> d
 
 def main():
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("operation", choices=("build", "verify"))
+  parser.add_argument("operation", choices=("build", "verify", "prepare"))
   parser.add_argument("--selection", type=Path, required=True)
   parser.add_argument("--source-artifact", type=Path, required=True)
   parser.add_argument("--source-dir", type=Path)
@@ -177,11 +182,11 @@ def main():
   if len(camera) != 2 or camera not in ((1344, 760), (1928, 1208)):
     parser.error("Expected a supported C3/C4 camera resolution")
   selection = read_selection(args.selection)
-  if args.operation == "build":
+  if args.operation in ("build", "prepare"):
     if args.source_dir is None:
-      parser.error("build requires --source-dir with the exact pinned ONNX inputs")
+      parser.error("building requires --source-dir with the exact pinned ONNX inputs")
     record = build(selection, args.source_artifact, args.source_dir, camera)
-  else:
+  if args.operation in ("verify", "prepare"):
     record = verify(selection, args.source_artifact, camera)
   print(json.dumps(record, indent=2))
 

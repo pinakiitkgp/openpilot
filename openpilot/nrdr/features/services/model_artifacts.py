@@ -47,6 +47,22 @@ def _read_record(path: Path) -> dict:
     return {}
 
 
+def download_rebuild_bundles(device_type: str) -> list[dict]:
+  return [recipe["catalog_bundle"] for recipe in _read_record(_MANIFEST).get("legacy_rebuilds", {}).values()
+          if recipe.get("download_rebuild", {}).get("device_type") == device_type]
+
+
+def download_rebuild_recipe(bundle) -> dict | None:
+  if len(bundle.models) != 1:
+    return None
+  artifact = bundle.models[0].artifact
+  recipe = _read_record(_MANIFEST).get("legacy_rebuilds", {}).get(artifact.downloadUri.sha256)
+  if (recipe and "download_rebuild" in recipe and bundle.ref == recipe["model_ref"] and bundle.internalName == recipe["model_name"] and
+      artifact.fileName == recipe["catalog_bundle"]["models"][0]["artifact"]["file_name"]):
+    return recipe
+  return None
+
+
 def _matching_artifact(path: Path, record: dict, *, camera: tuple[int, int] | None = None, device: str | None = None) -> bool:
   return (record.get("abi") == ARTIFACT_ABI and record.get("tinygrad_ref") == TINYGRAD_RUNTIME_REF and
           (camera is None or record.get("camera") in (None, list(camera))) and

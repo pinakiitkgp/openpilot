@@ -196,7 +196,23 @@ def test_local_catalog_only_lists_verified_rebuilds_for_this_camera(tmp_path, mo
   assert admission.verified_rebuild_bundles(tmp_path, (1344, 760)) == ([] if change else [selected])
 
 
-@pytest.mark.parametrize('kind', ['native_onnx', 'vision_policy'])
+def test_downloadable_vega2_has_a_distinct_identity_and_pins_both_assets():
+  entry, = admission.download_rebuild_bundles("mici")
+  assert admission.download_rebuild_bundles("tizi") == []
+  asset = entry["models"][0]["artifact"]
+  bundle = NS(ref=entry["ref"], internalName=entry["short_name"], models=[
+    NS(artifact=NS(fileName=asset["file_name"], downloadUri=NS(sha256=asset["download_uri"]["sha256"])))])
+  recipe = admission.download_rebuild_recipe(bundle)
+  assert recipe["model_type"] == "supercombo"
+  assert recipe["download_rebuild"]["camera"] == [1344, 760]
+  source = recipe["source_models"][recipe["model_file"]]
+  assert source["url"].endswith("spz_polaris_vega2_driving_supercombo.onnx")
+  assert entry["onnx_sha256"] == source["sha256"]
+  bundle.ref = "spz_polaris_vega"
+  assert admission.download_rebuild_recipe(bundle) is None
+
+
+@pytest.mark.parametrize('kind', ['native_onnx', 'vision_policy', 'supercombo'])
 def test_rebuild_uses_existing_native_or_legacy_compiler(tmp_path, runtime, monkeypatch, kind):
   original = tmp_path / 'original.pkl'
   original.write_bytes(b'upstream artifact')
@@ -224,6 +240,10 @@ def test_rebuild_uses_existing_native_or_legacy_compiler(tmp_path, runtime, monk
     assert command[2] == 'openpilot.nrdr.tools.model_compile'
     assert command[command.index('--onnx') + 1] == str(source.resolve())
     assert '--out-of-band' in command and options['env']['IMAGE'] == '2' and options['env']['FLOAT16'] == '1'
-  else:
+  elif kind == 'vision_policy':
     assert command[2] == 'openpilot.sunnypilot.modeld_v2.compile_modeld'
     assert '--vision-onnx' in command and '--policy-onnx' in command
+  else:
+    assert command[2] == 'openpilot.sunnypilot.modeld_v2.compile_modeld'
+    assert command[command.index('--supercombo-onnx') + 1] == str(source.resolve())
+    assert '--vision-onnx' not in command and '--policy-onnx' not in command

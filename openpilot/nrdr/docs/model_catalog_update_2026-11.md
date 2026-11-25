@@ -181,6 +181,23 @@ Provision the exact verified file **offroad** before refreshing Sunnylink. No ar
 distributed in Git. Clearing the inactive model cache can remove the entry; the retained
 replay copy can be used to provision it again. Rollback is simply reselecting Pop v2 offroad.
 
+### Polaris Vega 2 on pbm-honda-angle
+
+**Polaris Vega 2 (experimental, C4 only)** is available in the small-model picker on
+the comma four and in Sunnylink. Select it with the car off. First-time preparation
+downloads about 211 MB from the [publisher](https://polaris.firestar.link/models/spz_polaris_vega2)
+and may take several minutes. Model Manager verifies both SHA-256 hashes, compiles the
+publisher's ONNX and a 1344×760 warp with the branch's pinned tinygrad, and runs six
+synthetic frames through the model adapter and parser. The published StarPilot artifact
+identifies the download and is never executed. The device saves the selection after
+verification succeeds. Starting the car or choosing another model during preparation
+cancels it and preserves the prior selection. An existing verified rebuild can be reused.
+
+The published ONNX passed validation and CPU ONNX Runtime inference. A separate CPU
+build with the branch's compiler passed the serialization round trip, loaded its camera
+warp, and produced finite, input-responsive model and plan outputs. Qualcomm compile
+time, inference cadence and road behavior on this branch are unverified.
+
 ### Development timing inputs and experimental curve slowdown
 
 These are independent settings, read when the model or planner starts. They do not

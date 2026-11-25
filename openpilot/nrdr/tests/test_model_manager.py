@@ -1,10 +1,109 @@
 import ast
+import asyncio
+import json
+import os
 from pathlib import Path
+import signal
+import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 from openpilot.nrdr.features.services import TINYGRAD_RUNTIME_REF
 from openpilot.nrdr.features.services.model_manager import select_default_model
+from openpilot.nrdr.features.services.model_artifacts import ModelAdmissionError
+
+
+def manager_method(name, namespace):
+  source = Path(__file__).resolve().parents[3] / "openpilot/sunnypilot/models/manager.py"
+  cls = next(node for node in ast.parse(source.read_text(encoding="utf-8")).body
+             if isinstance(node, ast.ClassDef) and node.name == "ModelManagerSP")
+  method = next(node for node in cls.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name)
+  exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
+  return namespace[name]
+
+
+@pytest.mark.parametrize("offroad,device,compile_ok,still_current", [
+  (True, "mici", True, True),
+  (True, "mici", False, True),
+  (True, "mici", True, False),
+  (False, "mici", True, True),
+  (True, "tizi", True, True),
+])
+def test_selected_rebuild_activates_only_after_parked_verification(tmp_path, offroad, device, compile_ok, still_current):
+  class DownloadCancelled(Exception):
+    pass
+
+  status = SimpleNamespace(downloading="downloading", downloaded="downloaded", failed="failed")
+  model = SimpleNamespace(artifact=SimpleNamespace(fileName="original.pkl", downloadProgress=SimpleNamespace()))
+  selected = SimpleNamespace(models=[model], to_dict=lambda: {"ref": "vega2"})
+  namespace = {
+    "ACTIVE_BUNDLE_KEYS": {"qcom": "ModelManager_ActiveBundle"},
+    "HARDWARE": SimpleNamespace(get_device_type=lambda: device),
+    "Path": Path, "os": os, "ModelAdmissionError": ModelAdmissionError, "DownloadCancelled": DownloadCancelled,
+    "download_rebuild_recipe": lambda _: {"download_rebuild": {"device_type": "mici"}},
+    "get_active_bundle": lambda *args, **kwargs: selected,
+    "custom": SimpleNamespace(ModelManagerSP=SimpleNamespace(ModelBundle=object, DownloadStatus=status)),
+  }
+  saved = {"ref": "original"}
+  manager = SimpleNamespace(
+    params=SimpleNamespace(get=lambda _: saved, put=Mock()), _download_ref="vega2", chestnut_present=False,
+    _report_status=Mock(), _download_interrupted=lambda: not offroad, _process_artifact=AsyncMock(),
+    _prepare_download_rebuild=AsyncMock(side_effect=None if compile_ok else ModelAdmissionError("verification failed")),
+    _conditional_param_update=Mock(return_value=still_current),
+  )
+  apply = manager_method("_download_bundle", namespace)(manager, selected, str(tmp_path), "qcom")
+  if offroad and device == "mici" and compile_ok and still_current:
+    asyncio.run(apply)
+    assert selected.status == status.downloaded
+  else:
+    with pytest.raises((ModelAdmissionError, DownloadCancelled)):
+      asyncio.run(apply)
+    assert selected.status == status.failed
+
+  assert manager._prepare_download_rebuild.await_count == (offroad and device == "mici")
+  if offroad and device == "mici" and compile_ok:
+    manager._conditional_param_update.assert_called_once_with(
+      "ModelManager_ActiveBundle", {"ref": "vega2"}, {"ModelManager_ActiveBundle": saved, "IsOffroad": True, "ModelManager_DownloadRef": "vega2"})
+  else:
+    manager._conditional_param_update.assert_not_called()
+  manager.params.put.assert_not_called()
+  assert manager._repair_context is None
+
+
+def test_ignition_change_kills_the_rebuild_process_group(tmp_path):
+  class DownloadCancelled(Exception):
+    pass
+
+  process = SimpleNamespace(returncode=None, pid=123, wait=AsyncMock())
+  spawn = AsyncMock(return_value=process)
+  kill = Mock()
+  admit = Mock(side_effect=ModelAdmissionError("No verified local build"))
+  status = SimpleNamespace(verifying="verifying")
+  worker = manager_method("_prepare_download_rebuild", {
+    "asyncio": SimpleNamespace(create_subprocess_exec=spawn),
+    "os": SimpleNamespace(path=os.path, pathsep=os.pathsep, environ={}, killpg=kill),
+    "Path": Path, "sys": sys, "tempfile": tempfile, "json": json, "signal": signal,
+    "REPOSITORY_ROOT": tmp_path, "DownloadCancelled": DownloadCancelled, "ModelAdmissionError": ModelAdmissionError,
+    "admit_selected_artifact": admit,
+    "custom": SimpleNamespace(ModelManagerSP=SimpleNamespace(DownloadStatus=status, Artifact=SimpleNamespace)),
+  })
+  bundle = SimpleNamespace(models=[SimpleNamespace(artifact=SimpleNamespace(fileName="original.pkl", downloadProgress=SimpleNamespace()))],
+                           to_dict=lambda: {"ref": "vega2"})
+  recipe = {"download_rebuild": {"camera": [1344, 760]},
+            "source_models": {"source.onnx": {"url": "https://example.test/source.onnx", "sha256": "expected"}}}
+  manager = SimpleNamespace(_download_interrupted=Mock(side_effect=[False, True]), _report_status=Mock(), _process_artifact=AsyncMock())
+  with pytest.raises(DownloadCancelled):
+    asyncio.run(worker(manager, bundle, tmp_path, recipe))
+  assert spawn.call_args.kwargs["start_new_session"]
+  assert spawn.call_args.kwargs["env"]["DEV"] == "QCOM"
+  kill.assert_called_once_with(process.pid, signal.SIGKILL)
+  process.wait.assert_awaited_once()
+  admit.assert_called_once()
+  assert not list(tmp_path.iterdir())
 
 
 class FakeParams:
@@ -123,11 +222,6 @@ class TestSelectDefaultModel(unittest.TestCase):
 
   def test_manager_tick_calls_selection_hook_before_processing_downloads(self):
     # Run the actual host loop with pure boundaries and stop after one tick.
-    source = Path(__file__).resolve().parents[3] / "openpilot/sunnypilot/models/manager.py"
-    tree = ast.parse(source.read_text(encoding="utf-8"))
-    cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ModelManagerSP")
-    method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "main_thread")
-
     class TickComplete(BaseException):
       pass
 
@@ -156,9 +250,8 @@ class TestSelectDefaultModel(unittest.TestCase):
                  "ModelFetcher": SimpleNamespace(MODEL_SOURCES=("qcom", "chestnut"), active_source=lambda _: "qcom"),
                  "validate_active_bundles": lambda *args: None, "get_active_bundle": lambda *args, **kwargs: None,
                  "get_selected_bundle": lambda *args: None, "select_default_model": select_default_model}
-    exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
     with self.assertRaises(TickComplete):
-      namespace["main_thread"](manager)
+      manager_method("main_thread", namespace)(manager)
     self.assertEqual(processed, ["new-pop"])
     self.assertFalse(params.get_bool("NrdrAutoSelectModel"))
 

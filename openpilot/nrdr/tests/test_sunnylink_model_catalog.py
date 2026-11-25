@@ -84,6 +84,26 @@ def test_local_vega_is_opt_in_in_the_small_picker_only():
   assert params.values == values
 
 
+@pytest.mark.parametrize("source,device,visible", [
+  ("qcom", "mici", True), ("qcom", "tizi", False), ("chestnut", "mici", False),
+])
+def test_vega2_download_appears_in_the_comma_four_catalog(source, device, visible):
+  from types import SimpleNamespace
+  from openpilot.nrdr.features.services.model_artifacts import download_rebuild_bundles
+  available = load_function("openpilot/sunnypilot/models/fetcher.py", "local_rebuilds_for_source", {
+    "COMMA_HARDWARE": True, "HARDWARE": SimpleNamespace(get_device_type=lambda: device),
+    "Paths": SimpleNamespace(model_root=lambda: "/models"),
+    "download_rebuild_bundles": download_rebuild_bundles,
+    "verified_rebuild_bundles": lambda *args: [],
+  })
+  entries = available(source)
+  assert bool(entries) is visible
+  if visible:
+    assert entries[0]["ref"] == "spz_polaris_vega2"
+    assert entries[0]["models"][0]["artifact"]["download_uri"]["url"]
+    assert "spz_polaris_vega2" in [b["ref"] for b in catalog_response(MemoryParams(settings()), entries)["ModelManager_ModelsCache"]["bundles"]]
+
+
 def test_local_entry_is_not_duplicated_if_upstream_catalog_already_contains_it():
   params = MemoryParams(settings())
   params.values["ModelManager_ModelsCache"]["bundles"].append(cheddar())

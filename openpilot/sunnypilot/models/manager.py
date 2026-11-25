@@ -6,7 +6,10 @@ See the LICENSE.md file in the root directory for more details.
 """
 
 import asyncio
+import json
 import os
+import signal
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -16,6 +19,7 @@ import requests
 from openpilot.common.params import Params
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.hardware import HARDWARE
 from openpilot.common.hardware.hw import Paths
 
 from openpilot.cereal import messaging, custom
@@ -23,11 +27,13 @@ from openpilot.sunnypilot.models.fetcher import ModelFetcher
 from openpilot.sunnypilot.models.helpers import (ACTIVE_BUNDLE_KEYS, get_active_bundle, get_selected_bundle,
                                                   resolve_bundle_by_ref, validate_active_bundles, verify_file)
 from openpilot.nrdr.features.services.model_manager import get_model_repair_candidate, select_default_model
+from openpilot.nrdr.features.services.model_artifacts import ModelAdmissionError, admit_selected_artifact, download_rebuild_recipe
 
 # (connect, read) seconds. read is per-request inactivity, not a total cap
 DOWNLOAD_TIMEOUT = (30, 30)
 MODEL_REPAIR_RETRY_SECONDS = 60
 MODEL_REPAIR_REQUEST_PREFIX = "nrdr-repair:"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 
 
 class DownloadCancelled(Exception):
@@ -324,6 +330,57 @@ class ModelManagerSP:
     """Processes a single model download including verification"""
     await self._process_artifact(model.artifact, destination_path)
 
+  async def _prepare_download_rebuild(self, bundle, destination: Path, recipe: dict) -> None:
+    artifact = bundle.models[0].artifact
+    original = destination / artifact.fileName
+    camera = tuple(recipe["download_rebuild"]["camera"])
+    try:
+      admit_selected_artifact(original, bundle, camera, device="QCOM")
+      return
+    except (ModelAdmissionError, FileNotFoundError):
+      pass
+
+    artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.verifying
+    self._report_status()
+    with tempfile.TemporaryDirectory(prefix=".nrdr-model-source-", dir=destination) as staging:
+      source_dir = Path(staging)
+      for name, metadata in recipe["source_models"].items():
+        source = custom.ModelManagerSP.Artifact(fileName=name, downloadUri={"uri": metadata["url"], "sha256": metadata["sha256"]})
+        await self._process_artifact(source, str(source_dir))
+      if self._download_interrupted():
+        raise DownloadCancelled("Model preparation cancelled")
+
+      selection = source_dir / "selection.json"
+      selection.write_text(json.dumps(bundle.to_dict()), encoding="utf-8")
+      pythonpath = os.pathsep.join(filter(None, (str(REPOSITORY_ROOT), str(REPOSITORY_ROOT / "tinygrad_repo"), os.environ.get("PYTHONPATH"))))
+      environment = dict(os.environ, DEV="QCOM", PYTHONPATH=pythonpath)
+      environment.pop("CHESTNUT", None)
+      environment.pop("WARP_DEV", None)
+      process = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "openpilot.nrdr.tools.model_rebuild", "prepare",
+        "--selection", str(selection), "--source-artifact", str(original), "--source-dir", staging,
+        "--camera", "x".join(map(str, camera)),
+        env=environment, start_new_session=True,
+      )
+      try:
+        while process.returncode is None:
+          if self._download_interrupted():
+            raise DownloadCancelled("Model preparation cancelled")
+          try:
+            await asyncio.wait_for(process.wait(), timeout=0.25)
+          except TimeoutError:
+            pass
+        if process.returncode:
+          raise ModelAdmissionError("Model build or verification failed")
+      finally:
+        if process.returncode is None:
+          try:
+            os.killpg(process.pid, signal.SIGKILL)
+          except ProcessLookupError:
+            pass
+          await process.wait()
+    admit_selected_artifact(original, bundle, camera, device="QCOM")
+
   def _report_status(self) -> None:
     """Reports current status through messaging system"""
     msg = messaging.new_message('modelManagerSP', valid=True)
@@ -345,7 +402,17 @@ class ModelManagerSP:
     self._report_status()
     os.makedirs(destination_path, exist_ok=True)
 
+    rebuild = download_rebuild_recipe(model_bundle)
     try:
+      if rebuild:
+        if source != "qcom" or HARDWARE.get_device_type() != rebuild["download_rebuild"]["device_type"]:
+          raise ModelAdmissionError("Model build requires a compatible comma four")
+        key = ACTIVE_BUNDLE_KEYS[source]
+        saved = self.params.get(key)
+        self._repair_context = (key, saved)
+        if self._download_interrupted():
+          raise DownloadCancelled("Model preparation requires the car to be off")
+
       seen_artifacts: set[str] = set()
       for model in self.selected_bundle.models:
         artifact = model.artifact
@@ -359,10 +426,19 @@ class ModelManagerSP:
           seen_artifacts.add(artifact.fileName)
           await self._process_artifact(artifact, destination_path)
 
+      if rebuild:
+        await self._prepare_download_rebuild(self.selected_bundle, Path(destination_path), rebuild)
+        for model in self.selected_bundle.models:
+          model.artifact.downloadProgress.status = custom.ModelManagerSP.DownloadStatus.downloaded
       if self._download_interrupted():
         raise DownloadCancelled("Download cancelled")
       self.selected_bundle.status = custom.ModelManagerSP.DownloadStatus.downloaded
-      self.params.put(ACTIVE_BUNDLE_KEYS[source], model_bundle.to_dict(), block=True)
+      if rebuild:
+        if not self._conditional_param_update(key, self.selected_bundle.to_dict(),
+                                             {key: saved, "IsOffroad": True, "ModelManager_DownloadRef": self._download_ref}):
+          raise DownloadCancelled("Model preparation superseded before activation")
+      else:
+        self.params.put(ACTIVE_BUNDLE_KEYS[source], model_bundle.to_dict(), block=True)
       self.active_bundle = get_active_bundle(self.params, chestnut=self.chestnut_present)
 
     except Exception:
@@ -371,6 +447,8 @@ class ModelManagerSP:
       raise
 
     finally:
+      if rebuild:
+        self._repair_context = None
       self._report_status()
 
   def download(self, model_bundle: custom.ModelManagerSP.ModelBundle, destination_path: str, source: str) -> None:

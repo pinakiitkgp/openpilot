@@ -38,6 +38,38 @@
     }
   }],
   "legacy_rebuilds": {
+    "c66970fe6b17eb34c634e084b3f1bf8ac86c02590526124c31a65dadca3c9ff4": {
+      "model_ref": "spz_polaris_vega2",
+      "model_name": "spz_polaris_vega2",
+      "model_type": "supercombo",
+      "model_file": "spz_polaris_vega2_driving_supercombo.onnx",
+      "model_size": [512, 256],
+      "frame_skip": 4,
+      "download_rebuild": {"device_type": "mici", "camera": [1344, 760]},
+      "compiler_env": {"IMAGE": "1", "FLOAT16": "1", "NOLOCALS": "1", "JIT_BATCH_SIZE": "0", "OPENPILOT_HACKS": "1"},
+      "source_models": {
+        "spz_polaris_vega2_driving_supercombo.onnx": {
+          "sha256": "a57171b0c122abe22572a3fc83910c4eadc054455caf84fc581c193597d92e73",
+          "size": 96696386,
+          "url": "https://huggingface.co/buckets/StarPilot-Driving/StarPilot-Resources/resolve/onnx/spz_polaris_vega2/spz_polaris_vega2_driving_supercombo.onnx"
+        }
+      },
+      "catalog_bundle": {
+        "short_name": "spz_polaris_vega2", "ref": "spz_polaris_vega2",
+        "display_name": "Polaris Vega 2 (experimental, C4 only)",
+        "environment": "development", "runner": "tinygrad", "index": 1001,
+        "minimum_selector_version": "21", "generation": "0", "is_20hz": false, "is_big": false,
+        "onnx_sha256": "a57171b0c122abe22572a3fc83910c4eadc054455caf84fc581c193597d92e73",
+        "build_time": "2026-11-23", "overrides": {"folder": "nrdr testing", "lat": ".0", "long": ".0"},
+        "models": [{"type": "supercombo", "artifact": {
+          "file_name": "spz_polaris_vega2_driving_tinygrad.pkl",
+          "download_uri": {
+            "url": "https://huggingface.co/buckets/StarPilot-Driving/StarPilot-Resources/resolve/models/v26/spz_polaris_vega2/spz_polaris_vega2_driving_tinygrad.pkl",
+            "sha256": "c66970fe6b17eb34c634e084b3f1bf8ac86c02590526124c31a65dadca3c9ff4"
+          }
+        }}]
+      }
+    },
     "24fa1b3e67b64a1531d564aeca672969e4fcb8c120866325ff6eb71a31bb7f20": {
       "model_ref": "875a6b7e1e59a76e1c5d9972371564a4feb1deb9",
       "model_name": "CHEDDAR",

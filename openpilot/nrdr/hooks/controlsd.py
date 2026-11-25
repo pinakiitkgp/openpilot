@@ -126,6 +126,10 @@ def vehicle_model_state(controls, live_params, CS, lat_active: bool) -> tuple[fl
 
   stiffness = live_params.stiffnessFactor if controls.learn_stiffness else 1.0
   angle_offset = live_params.angleOffsetDeg if controls.learn_angle_offset else 0.0
+  if getattr(CS, "steeringAngleLinear", False):
+    # The EPS already removed the variable rack ratio. Use the learned on-center ratio only.
+    ratio = _held_comma_ratio(controls, live_params)
+    return max(stiffness, 0.1), max(ratio, 0.1), angle_offset, CS.steeringAngleDeg - angle_offset
   steer_ratio = selection.ratio_at(CS.steeringAngleDeg, _held_comma_ratio(controls, live_params))
   measured_angle = selection.linearize_measured_angle(CS.steeringAngleDeg - angle_offset)
   return max(stiffness, 0.1), max(steer_ratio, 0.1), angle_offset, measured_angle
@@ -141,7 +145,8 @@ def stopping_inputs(calibrated_pose, longitudinal_plan) -> tuple[float | None, f
 
 def lane_change_request(controls, CS, model, live_params, desired_curvature: float, active: bool, dt: float) -> float:
   """Command-only entry shaping before the existing curvature safety limiter."""
-  enabled = controls.CP.brand == "honda" and controls.steer_ratio_latch.selection.available
+  enabled = (controls.CP.brand == "honda" and not getattr(CS, "steeringAngleLinear", False)
+             and controls.steer_ratio_latch.selection.available)
   reduction = controls.nrdr_lane_change_entry.update(
     active=active and enabled and not controls.sm.valid['lateralManeuverPlan'],
     valid=bool(controls.sm.all_checks(['modelV2'])),

@@ -94,12 +94,8 @@ def _firmware_family(CP) -> FirmwareControllerProfile | None:
 
 
 def angle_controller_available(CP, CP_SP) -> bool:
-  flags = getattr(CP_SP, "flags", 0)
-  required = HondaFlagsSP.EPS_MODIFIED | HondaFlagsSP.EPS_ANGLE_PTM
-  if getattr(CP, "brand", "") != "honda" or str(getattr(CP, "carFingerprint", "")) != "HONDA_CLARITY" or flags & required != required:
-    return False
-  versions = {bytes(fw.fwVersion).rstrip(b"\0") for fw in getattr(CP, "carFw", ()) if fw.ecu == "eps"}
-  return versions == {b"39990+TRW+A020"}
+  from opendbc.sunnypilot.car.honda.clarity_eps import angle_ptm_available
+  return angle_ptm_available(CP, CP_SP)
 
 
 def firmware_controller_profile(CP, CP_SP, *, for_picker: bool = False) -> FirmwareControllerProfile | None:

@@ -119,8 +119,11 @@ class Controls(ControlsExt):
                                    delay_schedule=getattr(self.LaC, "delay_schedule", None), v_ego=CS.vEgo)
     self.VM.update_params(x, sr)
 
-    self.curvature = self.steer_ratio_latch.selection.measured_curvature(
-      self.VM, CS.steeringAngleDeg, CS.vEgo, lp.roll, angle_offset_deg=angle_offset)
+    if CS.steeringAngleLinear:
+      self.curvature = -self.VM.calc_curvature(math.radians(CS.steeringAngleDeg - angle_offset), CS.vEgo, lp.roll)
+    else:
+      self.curvature = self.steer_ratio_latch.selection.measured_curvature(
+        self.VM, CS.steeringAngleDeg, CS.vEgo, lp.roll, angle_offset_deg=angle_offset)
 
     # Update Torque Params
     if self.torque_tuning == 'torque':

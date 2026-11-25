@@ -98,7 +98,7 @@ CAPABILITY_LABELS: dict[str, str] = {
   "subaru_has_sng": "Subaru Stop-and-Go available",
   "hyundai_alpha_long_available": "Hyundai Alpha Longitudinal available",
   "has_handcrafted_lateral_profile": "Handcrafted lateral profile available",
-  "nrdr_angle_controller_available": "Clarity with angle PTM EPS firmware",
+  "nrdr_angle_controller_available": "Honda with supported AnglePTM EPS firmware",
   "nrdr_yaw_controller_available": "Supported Honda PTM Controller",
   "nrdr_firmware_prediction_schedule": "Measured PTM Controller prediction-delay schedule",
   "nrdr_firmware_controller_provisional": "Provisional firmware-specific calibration; confirm the required EPS build before driving",

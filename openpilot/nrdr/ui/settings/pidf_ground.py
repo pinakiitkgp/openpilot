@@ -37,9 +37,9 @@ class PidfGroundLayout(Widget):
     items = [self._controller,
       remember("HondaClarityAngleCap3", toggle_item_sp(
         title=tr("Clarity Angle Lateral Cap 3.0 m/s²"), param="HondaClarityAngleCap3",
-        description=tr("Uses the 3.0 m/s² clamp (mode 4) instead of 4.0. EPS builds 0x05, 0x09 and 0x0A; ignored on 0x0B (one 3.6 m/s² profile). Switches while lateral is off."))),
+        description=tr("Clarity EPS builds 0x05, 0x09 and 0x0A can select a 3.0 m/s² cap while lateral control is off."))),
       remember("HondaEpsAngleRateLimit", option_item_sp(
-        title=tr("Clarity Angle Rate Limit"), param="HondaEpsAngleRateLimit", min_value=0, max_value=300, value_change_step=10,
+        title=tr("Honda Angle Rate Limit"), param="HondaEpsAngleRateLimit", min_value=0, max_value=300, value_change_step=10,
         description=tr("Limits how fast the steering-angle target may move. Zero disables this optional cap."),
         label_callback=lambda value: tr("Off") if value == 0 else f"{value} deg/s")),
       *(remember(key, toggle_item_sp(title=tr(title), param=key, description=tr(description)))
@@ -131,7 +131,7 @@ class PidfGroundLayout(Widget):
     self._controller.action_item.set_enabled(ui_state.is_offroad() and not angle_required)
     profile = firmware_controller_profile(ui_state.CP, ui_state.CP_SP)
     description = tr("PTM Testing is experimental and starts with the same PTM Timing Off behavior; no new tuning is deployed. " +
-                     "Change while parked. Applies next drive. Clarity EPS 39990+TRW+A020 selects Angle Controller automatically. " +
+                     "Change while parked. Applies next drive. Supported Honda AnglePTM firmware selects Angle Controller automatically. " +
                      "Angle assistance has unresolved steering dropouts; not for road use.")
     if profile is not None and profile.required_rwd:
       description += " " + tr("Requires the corrected PTM firmware (RWD {}). Older builds report the same EPS version and are not "
@@ -142,7 +142,9 @@ class PidfGroundLayout(Widget):
     for key, item in self._tuning_items.items():
       available = key != "NrdrDeviceYawCorrection" or supports_interpolated_torque_pif(ui_state.CP, ui_state.CP_SP)
       if key in ANGLE_TUNING_KEYS:
-        available = angle_controller_available(ui_state.CP, ui_state.CP_SP)
+        available = angle_required
+        if key == "HondaClarityAngleCap3":
+          available = available and ui_state.CP.carFingerprint == "HONDA_CLARITY"
       if key == "NrdrDeviceYawCorrection":
         item.set_visible(angle_required or str(ui_state.params.get("NrdrLateralController")) not in ("1", "b'1'", "2", "b'2'"))
       item.action_item.set_enabled(available and tuning_write_allowed(ui_state.params, key, angle_required=angle_required))

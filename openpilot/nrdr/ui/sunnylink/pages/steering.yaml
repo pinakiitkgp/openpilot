@@ -60,7 +60,7 @@ sections:
         description: "Angle mode only: use the EPS's 3.0 m/s² lateral-acceleration clamp (mode 4) instead of 4.0. EPS builds 0x05, 0x09 and 0x0A; ignored on 0x0B (one 3.6 m/s² profile). Switches when lateral is off."
       - key: HondaEpsAngleRateLimit
         widget: option
-        title: Clarity Angle Rate Limit
+        title: Honda Angle Rate Limit
         description: "Angle mode only: caps how fast the steering-angle target may move, in deg/s. 0 turns the cap off."
         min: 0
         max: 300

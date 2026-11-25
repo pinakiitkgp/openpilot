@@ -1,3 +1,5 @@
+import math
+
 from openpilot.cereal import log
 from openpilot.selfdrive.controls.lib.latcontrol import LatControl
 
@@ -19,9 +21,12 @@ class LatControlAngle(LatControl):
       angle_steers_des = float(CS.steeringAngleDeg)
     else:
       angle_log.active = True
-      angle_steers_des = self.steer_ratio_selection.desired_angle_no_offset(
-        VM, CS.steeringAngleDeg, CS.vEgo, params.roll, desired_curvature,
-      )
+      if getattr(CS, "steeringAngleLinear", False):
+        angle_steers_des = math.degrees(VM.get_steer_from_curvature(-desired_curvature, CS.vEgo, params.roll))
+      else:
+        angle_steers_des = self.steer_ratio_selection.desired_angle_no_offset(
+          VM, CS.steeringAngleDeg, CS.vEgo, params.roll, desired_curvature,
+        )
       angle_steers_des += params.angleOffsetDeg
 
     if self.use_steer_limited_by_safety:

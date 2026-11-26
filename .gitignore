@@ -107,3 +107,7 @@ SKILL.md
 !.idea/customTargets.xml
 !.idea/tools/*
 !.run/*
+
+# StarPort projection server package
+!openpilot/sunnypilot/system/starport/
+!openpilot/sunnypilot/system/starport/**

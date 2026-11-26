@@ -1,0 +1,70 @@
+# Page: starport
+# Edit this file. Run compile_settings_ui.py to emit settings_ui.json.
+id: starport
+label: StarPort & CarPlay
+icon: display
+order: 8
+remote_configurable: true
+description: StarPort projection server and CarPlay Live View streaming settings
+sections:
+- id: starport_server
+  title: StarPort & CarPlay Live View
+  description: Run the StarPort TCP projection listener for CarPlay Live View (StarPortReceiver) and HeadunitPad clients.
+  items:
+  - key: StarPortEnabled
+    widget: toggle
+    title: Enable StarPort & CarPlay Live View
+    description: Start the StarPort projection server (starportd) so the CarPlay Live View iPhone app can stream the live road feed over your local network.
+    details: Starts starportd and stream_encoderd on the device. Disabled by default. Requires pairing your iPhone CarPlay Live View app on the same LAN.
+  - key: StarPortHeadunitPadMode
+    widget: toggle
+    title: HeadunitPad / CarPlay Live View Mode
+    description: Use HeadunitPad fragment acknowledgements required by the CarPlay Live View StarPortReceiver app.
+    details: Keep enabled for the build 144 CarPlay Live View iPhone app (carplay-live-view). Turn off only for legacy Open Headunit clients.
+    enablement:
+    - type: param
+      key: StarPortEnabled
+      equals: true
+  - key: StarPortAllowOffroad
+    widget: toggle
+    title: Stream While Offroad
+    description: Keep StarPort and live video encoding active while parked for pairing and testing.
+    details: When off, StarPort streams only while onroad to save power while parked.
+    enablement:
+    - type: param
+      key: StarPortEnabled
+      equals: true
+- id: starport_stream
+  title: Video Stream & Network
+  description: Camera source and listener port for StarPort clients.
+  items:
+  - key: StarPortVideoSource
+    widget: multiple_button
+    title: Camera Feed
+    description: Select which live camera stream StarPort sends to CarPlay Live View.
+    options:
+    - value: 0
+      label: Road
+    - value: 1
+      label: Wide Road
+    enablement:
+    - type: param
+      key: StarPortEnabled
+      equals: true
+  - key: StarPortPort
+    widget: option
+    title: Listener Port
+    description: TCP port for the StarPort HeadunitPad listener (default 5277).
+    details: The CarPlay Live View iPhone app expects port 5277 by default. Change only if another service uses 5277.
+    options:
+    - value: 5277
+      label: "5277 (Default)"
+    - value: 5278
+      label: "5278"
+    - value: 5279
+      label: "5279"
+    enablement:
+    - $ref: '#/macros/offroad'
+    - type: param
+      key: StarPortEnabled
+      equals: true

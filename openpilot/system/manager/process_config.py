@@ -66,8 +66,15 @@ def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
 def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
 
+def starport_enabled(started: bool, params: Params, CP: car.CarParams) -> bool:
+  return params.get_bool("StarPortEnabled") and (started or params.get_bool("StarPortAllowOffroad"))
+
 def livestream(started: bool, params: Params, CP: car.CarParams) -> bool:
-  return params.get_bool("IsLiveStreaming") or (not started and params.get_bool("LiveView"))
+  return (
+    params.get_bool("IsLiveStreaming")
+    or (not started and params.get_bool("LiveView"))
+    or starport_enabled(started, params, CP)
+  )
 
 def use_copyparty(started, params, CP: car.CarParams) -> bool:
   return bool(params.get_bool("EnableCopyparty"))
@@ -180,6 +187,9 @@ procs += [
   # mapd
   NativeProcess("mapd", Paths.mapd_root(), ["bash", "-c", f"{MAPD_PATH} > /dev/null 2>&1"], mapd_ready),
   PythonProcess("mapd_manager", "openpilot.sunnypilot.mapd.mapd_manager", always_run),
+
+  # StarPort / CarPlay Live View projection server (off unless StarPortEnabled is set)
+  RestartingPythonProcess("starportd", "openpilot.sunnypilot.system.starport.daemon", starport_enabled, enabled=COMMA_HARDWARE),
 
   # JetLink: the USB gadget owner, off (never started) unless the user turned the link on
   RestartingPythonProcess(jetlink_adapter.OWNER, "openpilot.sunnypilot.jetlink_adapter", jetlink_adapter.should_run),

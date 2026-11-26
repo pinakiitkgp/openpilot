@@ -445,6 +445,13 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     // NRDR-owned registry entries are generated from openpilot/nrdr/params/specs.py.
 #include "../nrdr/params/generated/params_keys.inc"
 
+    // StarPort & CarPlay Live View
+    {"StarPortEnabled", {PERSISTENT | BACKUP | DONT_LOG, BOOL, "0"}},
+    {"StarPortHeadunitPadMode", {PERSISTENT | BACKUP, BOOL, "1"}},
+    {"StarPortAllowOffroad", {PERSISTENT | BACKUP, BOOL, "0"}},
+    {"StarPortVideoSource", {PERSISTENT | BACKUP, INT, "0"}},
+    {"StarPortPort", {PERSISTENT | BACKUP, INT, "5277"}},
+
     // Torque lateral control custom params
     {"CustomTorqueParams", {PERSISTENT | BACKUP , BOOL}},
     {"EnforceTorqueControl", {PERSISTENT | BACKUP, BOOL}},

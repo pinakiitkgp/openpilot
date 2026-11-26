@@ -181,7 +181,7 @@ Provision the exact verified file **offroad** before refreshing Sunnylink. No ar
 distributed in Git. Clearing the inactive model cache can remove the entry; the retained
 replay copy can be used to provision it again. Rollback is simply reselecting Pop v2 offroad.
 
-### Polaris Vega 2 on pbm-honda-angle
+### Polaris Vega 2 on pbm-sunny-angle
 
 **Polaris Vega 2 (experimental, C4 only)** is available in the small-model picker on
 the comma four and in Sunnylink. Select it with the car off. First-time preparation

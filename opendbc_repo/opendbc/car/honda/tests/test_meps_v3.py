@@ -1,12 +1,18 @@
 """Protocol v3 on the openpilot side (meps/protocol.py; spec rwd-xray lab/PROTOCOL_V3_20261125.md): a build in V3_BUILDS
 (0x0E) gets angle frames marked in byte 2 (bits 3:2 = 3, request bit 0, bit 6 DRIVE / YIELD), byte 3 0, and STANDBY
 (0x0D, target 0) while not steering. Builds 0x0B-0x0D keep the v2 frames."""
+from dataclasses import replace
+from types import SimpleNamespace
+
 import pytest
 
 from opendbc.car.honda.meps import protocol as P
+from opendbc.car.honda.modified_eps import DEFAULT_SETTINGS
 from opendbc.car.honda.tests import test_clarity_angle_mode as T
 from opendbc.car.honda.tests.test_eps_cal_status import v4
-from opendbc.car.honda.tests.test_meps_v2 import angle_on, start  # noqa: F401  (fixture)
+from opendbc.car.honda.tests.test_meps_v2 import angle_on, start
+from opendbc.car.honda.tests.test_sh2a_angle_mode import Car, make
+from opendbc.car.honda.values import CAR
 
 assert angle_on
 
@@ -69,6 +75,93 @@ def test_v3_hold_off_drops_to_standby_during_a_press():
     T.e4(ci, True, 5.0, 0.0, v=20.0)
   fr = [T.e4(ci, True, 5.0, -8.0, v=20.0, pressed=True)[1] for _ in range(80)][-1]
   assert fr[2] == P.V3_STANDBY and fr[0:2] == bytes(2)
+
+
+class CrvV3(Car):
+  driver_torque = 0
+  send_torque = True
+
+  def frames(self):
+    frames = super().frames()
+    if self.send_torque:
+      frames.append(self.packer.make_can_msg("STEER_STATUS", self.bus.pt,
+                                             {"STEER_TORQUE_SENSOR": self.driver_torque, "COUNTER": self.k % 4}))
+    return frames
+
+
+@pytest.mark.parametrize("hold", [True, False])
+def test_v3_crv_waits_for_quiet_torque_and_rack_before_resuming(hold):
+  ci = make(CAR.HONDA_CRV_5G, "TLA", "A220")
+  ci.CC.modified_eps_settings = SimpleNamespace(current=lambda: replace(DEFAULT_SETTINGS, angle_hold_override=hold))
+  car = CrvV3(ci, build=0x0E)
+  held_marker = P.v3_byte2(False) if hold else P.V3_STANDBY
+
+  def step(marker):
+    cs, dat, accepted, _ = car.step(True, 0.)
+    assert accepted
+    assert dat[2] == marker
+    return cs, dat
+
+  for _ in range(12):
+    car.step(True, 0.)
+  step(P.v3_byte2(True))
+  car.driver_torque = 2300
+  assert step(held_marker)[0].steeringPressed
+
+  # The torque-only driver flag clears after 100 ms. The rack is still moving at 50 deg/s.
+  car.driver_torque = 100
+  for i in range(28):
+    car.wheel += 0.5
+    cs, _ = step(held_marker)
+    assert cs.steeringPressed == (i < 9)
+
+  # Wait for the trailing rack rate to settle. The first qualifying frame starts the 150 ms timer.
+  for _ in range(9):
+    step(held_marker)
+    if abs(ci.CS.linear_angle.rate_deg_s) < 25:
+      break
+  assert abs(ci.CS.linear_angle.rate_deg_s) < 25
+  for _ in range(13):
+    step(held_marker)
+
+  # A renewed correction above the release threshold resets the dwell even below the original press threshold.
+  car.driver_torque = 900
+  assert not step(held_marker)[0].steeringPressed
+  car.driver_torque = 100
+  for _ in range(14):
+    step(held_marker)
+  _, resumed = step(P.v3_byte2(True))
+  assert -target(resumed) / 10 == pytest.approx(car.wheel, abs=0.15)
+
+  car.driver_torque = 2300
+  assert step(held_marker)[0].steeringPressed
+
+
+def test_v3_crv_stale_release_inputs_restart_the_dwell():
+  ci = make(CAR.HONDA_CRV_5G, "TLA", "A220")
+  car = CrvV3(ci, build=0x0E)
+  for _ in range(12):
+    car.step(True, 0.)
+  car.driver_torque = 2300
+  car.step(True, 0.)
+  car.driver_torque = 0
+  for _ in range(8):
+    car.step(True, 0.)
+  car.send_lin = False
+  car.send_torque = False
+  for _ in range(5):
+    _, dat, accepted, _ = car.step(True, 0.)
+    assert accepted and dat[2] != P.v3_byte2(True)
+  assert dat[2] == P.V3_STANDBY
+  assert ci.CS.linear_angle.rate_deg_s is None
+
+  car.send_lin = True
+  car.send_torque = True
+  for _ in range(22):
+    _, dat, accepted, _ = car.step(True, 0.)
+    assert accepted and dat[2] == P.v3_byte2(False)
+  _, dat, accepted, _ = car.step(True, 0.)
+  assert accepted and dat[2] == P.v3_byte2(True)
 
 
 def test_v3_frames_never_carry_the_request_or_byte3():

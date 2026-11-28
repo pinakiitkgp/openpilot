@@ -244,6 +244,8 @@ class CarController(CarControllerBase):
       limited_torque, lkas_active = 0.0, CC.latActive
     elif self.modified_eps_steering is not None:
       limited_torque, lkas_active, meps_pressed = self.modified_eps_steering.update(CC, CS, current_settings(self.modified_eps_settings))
+      if self.angle_sender is not None and CS.eps_cal_status.protocol == 3:
+        meps_pressed |= CS.angle_override_pressed
       angle_hold = (self.angle_sender is not None and CS.eps_cal_status.authority_ready and
                     current_settings(self.modified_eps_settings).angle_hold_override)
       if angle_hold:

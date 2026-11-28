@@ -12,8 +12,8 @@ from opendbc.car.honda.angle_profiles import angle_profile
 from opendbc.car.honda.eps_cal_status import MSG as EPS_CAL_STATUS_MSG, EpsCalStatus
 from opendbc.car.honda.meps.linear_angle import MSG as EPS_LINEAR_ANGLE_MSG, LinearAngle
 from opendbc.car.honda.hondacan import CanBus
-from opendbc.car.honda.modified_eps import SteeringPressedHysteresis, angle_mode_threshold, current_settings, modified_eps, \
-  steering_pressed_threshold
+from opendbc.car.honda.modified_eps import ANGLE_V3_RELEASE_HOLD_S, ANGLE_V3_RELEASE_MAX_RACK_RATE_DEG_S, SteeringPressedHysteresis, \
+  angle_mode_threshold, current_settings, modified_eps, steering_pressed_threshold
 from opendbc.car.honda.yaw_rate import get_yaw_rate_calibration
 from opendbc.car.honda.values import CAR, DBC, STEER_THRESHOLD, HondaFlags, CruiseButtons, CruiseSettings, \
                                                  GearShifter, CarControllerParams
@@ -58,6 +58,8 @@ class CarState(CarStateBase):
     self.modified_eps = modified_eps(CP)
     self.modified_eps_settings = None
     self.steering_pressed_hysteresis = SteeringPressedHysteresis()
+    self.angle_override_hysteresis = SteeringPressedHysteresis(ANGLE_V3_RELEASE_HOLD_S)
+    self.angle_override_pressed = False
     self.yaw_rate = get_yaw_rate_calibration(CP.carFingerprint) if self.modified_eps else None
 
     self.brake_switch_prev = False
@@ -248,6 +250,13 @@ class CarState(CarStateBase):
       if self.CP.flags & HondaFlags.CLARITY_ANGLE_MODE:   # lower toward center, the full setting from 45 deg
         steer_threshold = angle_mode_threshold(steer_threshold, self.published_angle_deg)
       ret.steeringPressed = self.steering_pressed_hysteresis.update(ret.steeringTorque, steer_threshold)
+      if self.eps_cal_status.protocol == 3:
+        # Qualify only the EPS handoff here. Lane-change and driver-input consumers keep the ordinary press signal.
+        rack_rate = self.linear_angle.rate_deg_s
+        torque_ts = cp.ts_nanos["STEER_STATUS"]["STEER_TORQUE_SENSOR"]
+        torque_fresh = torque_ts > 0 and 0 <= cp._last_update_nanos - torque_ts <= 30_000_000
+        release_allowed = torque_fresh and rack_rate is not None and abs(rack_rate) < ANGLE_V3_RELEASE_MAX_RACK_RATE_DEG_S
+        self.angle_override_pressed = self.angle_override_hysteresis.update(ret.steeringTorque, steer_threshold, release_allowed=release_allowed)
     else:
       steer_threshold = STEER_THRESHOLD.get(self.CP.carFingerprint, 1200)
       ret.steeringPressed = abs(ret.steeringTorque) > steer_threshold

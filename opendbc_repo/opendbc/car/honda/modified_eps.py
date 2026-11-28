@@ -81,20 +81,23 @@ def lane_change_nudge_torque(CP) -> float | None:
 # torque sag below 60 % and op took back over mid-manoeuvre (stutter); the press now has to fall further before op resumes.
 RELEASE_FRACTION = 0.4
 RELEASE_HOLD_S = 0.1
+ANGLE_V3_RELEASE_HOLD_S = 0.15
+ANGLE_V3_RELEASE_MAX_RACK_RATE_DEG_S = 25.0
 
 
 class SteeringPressedHysteresis:
-  def __init__(self):
+  def __init__(self, release_hold_s: float = RELEASE_HOLD_S):
+    self.release_hold_s = release_hold_s
     self.pressed = False
     self.below_s = 0.0
 
-  def update(self, steering_torque: float, threshold: float) -> bool:
+  def update(self, steering_torque: float, threshold: float, *, release_allowed: bool = True) -> bool:
     if not self.pressed:
       self.pressed = abs(steering_torque) > threshold
       self.below_s = 0.0
     else:
-      self.below_s = self.below_s + DT_CTRL if abs(steering_torque) < RELEASE_FRACTION * threshold else 0.0
-      self.pressed = self.below_s < RELEASE_HOLD_S - 1e-6
+      self.below_s = self.below_s + DT_CTRL if release_allowed and abs(steering_torque) < RELEASE_FRACTION * threshold else 0.0
+      self.pressed = self.below_s < self.release_hold_s - 1e-6
     return self.pressed
 
 

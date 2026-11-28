@@ -6,6 +6,8 @@ vehicle model with paramsd's single steer ratio (no VGR table, no rack map). VSR
 
 Same latch as panda: the first valid 0x6A2 (CANParser checks checksum and counter) latches linear mode until restart; a
 stale 0x6A2 after that is a temporary steering fault, never a silent switch back to the published angle."""
+from collections import deque
+
 from opendbc.car.honda.meps.protocol import LINEAR_ANGLE_BUILDS
 
 MSG = "EPS_LINEAR_ANGLE"
@@ -14,6 +16,8 @@ STALE_FRAMES = 5   # carState updates (100 Hz): 50 ms, panda's measured-angle ti
 # frames inside panda's 50 ms block (carState sees the bus 10-20 ms after panda does), so openpilot drops the request
 # before panda would block a frame; the fault (STALE_FRAMES) follows and disengages
 SEND_FRAMES = 3
+RATE_WINDOW_NS = 80_000_000
+RATE_MAX_SAMPLE_GAP_NS = 30_000_000
 
 
 class LinearAngle:
@@ -30,6 +34,28 @@ class LinearAngle:
     self.build_id = -1
     self.fault_reason = ""
     self.ref_latched = True     # 0x6A2 byte 6 bit 1 (REF_LATCHED), where the platform DBC has it
+    self._rate_samples: deque[tuple[int, float]] = deque()
+    self._rate_deg_s: float | None = None
+
+  @property
+  def rate_deg_s(self) -> float | None:
+    """Trailing rack-linear rate, available only with recent samples and an aligned reference."""
+    return self._rate_deg_s if self.frames_since <= 1 else None
+
+  def _update_rate(self, ts: int):
+    samples = self._rate_samples
+    if not self.ref_latched or (samples and not 0 < ts - samples[-1][0] <= RATE_MAX_SAMPLE_GAP_NS):
+      samples.clear()
+      self._rate_deg_s = None
+    if not self.ref_latched:
+      return
+    samples.append((ts, self.angle_deg))
+    cutoff = ts - RATE_WINDOW_NS
+    while len(samples) > 1 and samples[1][0] <= cutoff:
+      samples.popleft()
+    old_ts, old_angle = samples[0]
+    if old_ts <= cutoff:
+      self._rate_deg_s = (self.angle_deg - old_angle) * 1e9 / (ts - old_ts)
 
   @property
   def steer_ok(self) -> bool:
@@ -59,6 +85,7 @@ class LinearAngle:
       # 0 until the latch: a sane angle, but not the linear one, and the EPS refuses to steer. Platform DBCs without the
       # signal (the Clarity's: its reference is its own) are always latched.
       self.ref_latched = bool(cp.vl[MSG].get("REF_LATCHED", 1))
+      self._update_rate(ts)
     else:
       self.frames_since += 1
     if self.latched and self.frames_since > STALE_FRAMES:
